@@ -1,0 +1,26 @@
+/* Websocket-based Drawing App
+   Written by: Bill Healey
+*/
+
+body {
+    background: white;
+    margin: 10px;
+    font-family: sans-serif;
+    font-size: 10pt;
+}
+
+#canvas {
+    background-color: black;
+    display: none;
+}
+
+#inbox {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    display: none;
+}
+
+#inbox .message {
+    padding-top: 0.25em;
+}
