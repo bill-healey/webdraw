@@ -41,6 +41,11 @@ var WebDraw = {
         this.isMobileDevice = this.checkForMobileDevice();
         if (this.isMobileDevice) {
             $('#controller').show();
+            this.initColorTable();
+            //Get rid of safari address bar
+            //setTimeout(function () {
+            //    window.scrollTo(0, 1);
+            //}, 0);
         } else {
             $('#display').show();
             this.initDraw();
@@ -50,8 +55,8 @@ var WebDraw = {
         $(window).on("touchend", this.onTouchChange);
         $(window).on("deviceorientation", this.onDeviceOrientation);
         $(window).on("mousemove", this.onMouseMove);
-        this.initWebSocket();
 
+        this.initWebSocket();
     },
 
     initDraw: function() {
@@ -63,17 +68,36 @@ var WebDraw = {
         this.canvasPosition = $(canvas).offset();
         this.canvasContext = canvas.getContext("2d");
         this.canvasContext.lineWidth = 3;
-        this.canvasContext.strokeStyle = "#FFFFFF";
     },
 
     initWebSocket: function(a) {
+        "use strict";
         var url = "ws://" + location.host + "/ws";
         this.socket = new WebSocket(url);
-        ws_class = this;
+        var ws_class = this;
 
         if (!this.isMobileDevice) {
             this.socket.onmessage = function(e) {ws_class.draw(e)};
         }
+    },
+
+    initColorTable: function(a) {
+        "use strict";
+        var colors_per_row, colors, tr, i;
+        tr = "";
+        colors_per_row = 3;
+        colors = ['red', 'yellow', 'blue', 'orange', 'white', 'green', 'pink', 'purple', 'brown'];
+
+        while (colors.length) {
+            tr += "<tr>";
+            for (i = 0; i < colors_per_row; i++) {
+                tr += "<td style='background-color: " + colors.pop() + "'></td>";
+            }
+            tr += "</tr>";
+        }
+
+        $(tr).prependTo('#colors');
+
     },
 
     onDeviceOrientation: function(event) {
@@ -92,7 +116,7 @@ var WebDraw = {
 
     onTouchChange: function(event) {
         if (event.originalEvent.touches.length > 0) {
-            this.isTouched = true;
+            this.isTouched = $(event.originalEvent.target).css('background-color');
         } else {
             this.isTouched = false;
         }
@@ -122,7 +146,7 @@ var WebDraw = {
             y: (this.ControllerRange.betaCenter + this.ControllerRange.betaSector / 2 - beta) * this.ControllerRange.betaScale
         };
 
-        $('#cursor').css({left: this.canvasPosition.left + newPosition.y,
+        $('#cursor').css({left: this.canvasPosition.left + newPosition.x,
                           top: this.canvasPosition.top + newPosition.y});
 
         if (!this.prevPosition) {
@@ -132,8 +156,9 @@ var WebDraw = {
 
         if (coords.body[2]) {
             this.canvasContext.beginPath();
-            this.canvasContext.moveTo(this.prevX, this.prevY);
+            this.canvasContext.moveTo(this.prevPosition.x, this.prevPosition.y);
             this.canvasContext.lineTo(newPosition.x, newPosition.y);
+            this.canvasContext.strokeStyle = coords.body[2];
             this.canvasContext.stroke();
         }
 
