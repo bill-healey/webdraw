@@ -9,8 +9,28 @@ body {
     font-size: 10pt;
 }
 
+/* *************************
+   Display specific
+   *************************/
+#display {
+    display: none;
+}
+
 #canvas {
     background-color: black;
+}
+
+#cursor {
+    background-color: yellow;
+    width: 3px;
+    height: 3px;
+    position: absolute;
+}
+
+/* *************************
+   Controller specific
+   *************************/
+#controller {
     display: none;
 }
 
@@ -18,7 +38,6 @@ body {
     position: absolute;
     bottom: 10px;
     left: 10px;
-    display: none;
 }
 
 #inbox .message {
