@@ -12,7 +12,7 @@ $(document).ready(function() {
 //**************************************************************************
 var WebDraw = {
 
-    updateDelta: 200, //Only send data every x milliseconds to limit data spamming
+    updateDelta: 50, //Only send data every x milliseconds to limit data spamming
     lastUpdate: Date.now(),
     isMobileDevice: null,
     socket: null,
@@ -51,10 +51,10 @@ var WebDraw = {
             this.initDraw();
         }
 
-        $(window).on("touchstart", this.onTouchChange);
-        $(window).on("touchend", this.onTouchChange);
-        $(window).on("deviceorientation", this.onDeviceOrientation);
-        $(window).on("mousemove", this.onMouseMove);
+        $(window).on("touchstart", null, {originalThis: this}, this.onTouchChange);
+        $(window).on("touchend",  null, {originalThis: this}, this.onTouchChange);
+        $(window).on("deviceorientation", null, {originalThis: this}, this.onDeviceOrientation);
+        $(window).on("mousemove", null, {originalThis: this}, this.onMouseMove);
 
         this.initWebSocket();
     },
@@ -67,7 +67,7 @@ var WebDraw = {
         this.ControllerRange.alphaScale = canvas.width / this.ControllerRange.alphaSector;
         this.canvasPosition = $(canvas).offset();
         this.canvasContext = canvas.getContext("2d");
-        this.canvasContext.lineWidth = 3;
+        this.canvasContext.lineCap = 'round';
     },
 
     initWebSocket: function(a) {
@@ -101,24 +101,33 @@ var WebDraw = {
     },
 
     onDeviceOrientation: function(event) {
-        var now = Date.now();
-        if (this.now - this.last_update < this.update_delta ||
+        var now, color;
+        now = Date.now();
+        if (now - event.data.originalThis.lastUpdate <= event.data.originalThis.updateDelta ||
             !event.originalEvent.alpha ||
             !event.originalEvent.beta) {
             return;
         }
-        this.last_update = now;
+        event.data.originalThis.lastUpdate = now;
+
+        //Erase if device is turned upside-down
+        //TODO: rename isTouched to touchColor and send isInverted as 4th data param
+        if (Math.abs(event.originalEvent.gamma) > 120 && event.data.originalThis.isTouched)
+            color = '#000000';
+        else
+            color = event.data.originalThis.isTouched;
+
         var data = [event.originalEvent.alpha.toFixed(3),
                     event.originalEvent.beta.toFixed(3),
-                    this.isTouched];
+                    color];
         WebDraw.socket.send(JSON.stringify(data));
     },
 
     onTouchChange: function(event) {
         if (event.originalEvent.touches.length > 0) {
-            this.isTouched = $(event.originalEvent.target).css('background-color');
+            event.data.originalThis.isTouched = $(event.originalEvent.target).css('background-color');
         } else {
-            this.isTouched = false;
+            event.data.originalThis.isTouched = false;
         }
         event.preventDefault();
         event.originalEvent.preventDefault();
@@ -126,7 +135,7 @@ var WebDraw = {
     },
 
     onMouseMove: function(event) {
-        //var data = [event.pageX.toFixed(3), event.pageY.toFixed(3)];
+        var data = [event.pageX.toFixed(3), event.pageY.toFixed(3)];
     },
 
     draw: function(event) {
@@ -154,7 +163,16 @@ var WebDraw = {
             return;
         }
 
+        if (!coords.body[2] || coords.body[2] !== "#000000") {
+            this.canvasContext.lineWidth = 4;
+            $('#cursor').removeClass('eraser');
+        }
+
         if (coords.body[2]) {
+            if (coords.body[2] === "#000000") {
+                this.canvasContext.lineWidth = 100;
+                $('#cursor').addClass('eraser');
+            }
             this.canvasContext.beginPath();
             this.canvasContext.moveTo(this.prevPosition.x, this.prevPosition.y);
             this.canvasContext.lineTo(newPosition.x, newPosition.y);
@@ -165,15 +183,10 @@ var WebDraw = {
         this.prevPosition = newPosition;
     },
 
-    showMessage: function(event) {
-        var message = JSON.parse(event.data);
-        var existing = $("#m" + message.id);
-        if (existing.length > 0)
-            return;
-        var node = $(message.html);
-        node.hide();
-        $("#inbox").append(node);
-        node.slideDown();
+    showDebugMessage: function(message) {
+        $("#debug").show();
+        $("#colors").hide();
+        $("#debug").append( '<div class="message">' + String(message) + '</div>');
     },
 
     checkForMobileDevice: function() {

@@ -72,9 +72,6 @@ class DrawSocketHandler(tornado.websocket.WebSocketHandler):
             "id": str(uuid.uuid4()),
             "body": parsed,
             }
-        msg["html"] = tornado.escape.to_basestring(
-            self.render_string("message.html", message=msg))
-
         DrawSocketHandler.update_cache(msg)
         DrawSocketHandler.send_updates(msg)
 
