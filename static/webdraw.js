@@ -37,9 +37,7 @@ var WebDraw = function() {
             $('#controller').show();
             this.initColorTable();
             //Get rid of safari address bar
-            //setTimeout(function () {
-            //    window.scrollTo(0, 1);
-            //}, 0);
+            //window.scrollTo(0, 1);
         } else {
             $('#display').show();
             this.initDraw();
@@ -92,7 +90,7 @@ var WebDraw = function() {
     };
 
     this.onDeviceOrientation = function(event) {
-        var now, color;
+        var now, isDeviceInverted;
         now = Date.now();
         if (now - event.data.originalThis.lastUpdate <= event.data.originalThis.updateDelta ||
                 !event.originalEvent.alpha ||
@@ -101,16 +99,13 @@ var WebDraw = function() {
         }
         event.data.originalThis.lastUpdate = now;
 
-        //Erase if device is turned upside-down
-        //TODO: rename touchColor to touchColor and send isInverted as 4th data param
-        if (Math.abs(event.originalEvent.gamma) > 120 && event.data.originalThis.touchColor)
-            color = '#000000';
-        else
-            color = event.data.originalThis.touchColor;
+        isDeviceInverted = (Math.abs(event.originalEvent.gamma) > 120);
 
         var data = [event.originalEvent.alpha.toFixed(3),
                     event.originalEvent.beta.toFixed(3),
-                    color];
+                    event.data.originalThis.touchColor,
+                    isDeviceInverted];
+
         event.data.originalThis.socket.send(JSON.stringify(data));
     };
 
@@ -131,6 +126,7 @@ var WebDraw = function() {
 
     this.draw = function(event) {
 
+        //coords are {body: [alpha, beta, color, isInverted]}
         var coords = JSON.parse(event.data);
 
         var alpha = coords.body[0];
@@ -154,20 +150,21 @@ var WebDraw = function() {
             return;
         }
 
-        if (!coords.body[2] || coords.body[2] !== "#000000") {
+        if (coords.body[3]) {
+            //Eraser
+            this.canvasContext.lineWidth = 100;
+            $('#cursor').addClass('eraser');
+            this.canvasContext.strokeStyle = "#000000";
+        } else {
             this.canvasContext.lineWidth = 4;
             $('#cursor').removeClass('eraser');
+            this.canvasContext.strokeStyle = coords.body[2];
         }
 
         if (coords.body[2]) {
-            if (coords.body[2] === "#000000") {
-                this.canvasContext.lineWidth = 100;
-                $('#cursor').addClass('eraser');
-            }
             this.canvasContext.beginPath();
             this.canvasContext.moveTo(this.prevPosition.x, this.prevPosition.y);
             this.canvasContext.lineTo(newPosition.x, newPosition.y);
-            this.canvasContext.strokeStyle = coords.body[2];
             this.canvasContext.stroke();
         }
 
