@@ -66,11 +66,10 @@ class DrawSocketHandler(tornado.websocket.WebSocketHandler):
                 logging.error("Error sending message", exc_info=True)
 
     def on_message(self, message):
-        logging.info("got message %r", message)
+        logging.info("msg: %r", message)
         parsed = tornado.escape.json_decode(message)
         msg = {
-            "id": str(uuid.uuid4()),
-            "body": parsed,
+            "d": parsed,
             }
         DrawSocketHandler.update_cache(msg)
         DrawSocketHandler.send_updates(msg)

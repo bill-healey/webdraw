@@ -14,6 +14,8 @@ var WebDraw = function() {
     this.canvasPosition = null;
     this.canvasContext = null;
     this.touchColor = false;
+    this.packetTimestamp = null;
+    this.lastRtt = null;
 
     //Contains info about the deviceorientation control ranges
     this.ControllerRange = {
@@ -67,8 +69,10 @@ var WebDraw = function() {
         this.socket = new WebSocket(url);
         var wsClass = this;
 
-        if (!this.isMobileDevice) {
-            this.socket.onmessage = function(e) {wsClass.draw(e)};
+        if (this.isMobileDevice) {
+            this.socket.onmessage = function(e) {wsClass.calcLag(e); };
+        } else {
+            this.socket.onmessage = function(e) {wsClass.draw(e); };
         }
     };
 
@@ -99,12 +103,19 @@ var WebDraw = function() {
         }
         event.data.originalThis.lastUpdate = now;
 
+        if (!event.data.originalThis.packetTimestamp) {
+            event.data.originalThis.packetTimestamp = now;
+        }
+
         isDeviceInverted = (Math.abs(event.originalEvent.gamma) > 120);
 
         var data = [event.originalEvent.alpha.toFixed(3),
                     event.originalEvent.beta.toFixed(3),
                     event.data.originalThis.touchColor,
-                    isDeviceInverted];
+                    isDeviceInverted,
+                    now,
+                    event.data.originalThis.lastRtt,
+                    'Bill'];
 
         event.data.originalThis.socket.send(JSON.stringify(data));
     };
@@ -124,20 +135,37 @@ var WebDraw = function() {
         //var data = [event.pageX.toFixed(3), event.pageY.toFixed(3)];
     };
 
+    this.calcLag = function(event) {
+        var coords;
+        coords = JSON.parse(event.data);
+        //TODO: change for multiuser
+        if (this.packetTimestamp && coords.d[4] >= this.packetTimestamp) {
+            // Packet has just completed an RTT
+            this.lastRtt = Date.now() - this.packetTimestamp;
+            this.packetTimestamp = null;
+        }
+    };
+
     this.draw = function(event) {
+        var data, alpha, beta, color, isEraser, clientTimestamp, clientRtt, clientName,
+            alphaRotationFactor, newPosition;
 
-        //coords are {body: [alpha, beta, color, isInverted]}
-        var coords = JSON.parse(event.data);
+        data = JSON.parse(event.data);
 
-        var alpha = coords.body[0];
-        var beta = coords.body[1];
+        alpha = data.d[0];
+        beta = data.d[1];
+        color = data.d[2];
+        isEraser = data.d[3];
+        clientTimestamp = data.d[4];
+        clientRtt = data.d[5];
+        clientName = data.d[6];
 
         //The alpha range is 0-360 so rotate the center to 180 so that we avoid the modulo seam at 360
         // this way the number space will only wrap around behind the user to prevent jumps
-        var alphaRotationFactor = (180 + this.ControllerRange.alphaCenter) % 360;
+        alphaRotationFactor = (180 + this.ControllerRange.alphaCenter) % 360;
         alpha = (alpha + alphaRotationFactor) % 360;
 
-        var newPosition = {
+        newPosition = {
             x: (((180 + this.ControllerRange.alphaSector / 2 - alpha + 360) % 360) - 180) * this.ControllerRange.alphaScale,
             y: (this.ControllerRange.betaCenter + this.ControllerRange.betaSector / 2 - beta) * this.ControllerRange.betaScale
         };
@@ -145,23 +173,24 @@ var WebDraw = function() {
         $('#cursor').css({left: this.canvasPosition.left + newPosition.x,
                           top: this.canvasPosition.top + newPosition.y});
 
+        $('#cursortext').text(clientName + ": " + String(clientRtt));
+
         if (!this.prevPosition) {
             this.prevPosition = newPosition;
             return;
         }
 
-        if (coords.body[3]) {
-            //Eraser
+        if (isEraser) {
             this.canvasContext.lineWidth = 100;
             $('#cursor').addClass('eraser');
             this.canvasContext.strokeStyle = "#000000";
         } else {
             this.canvasContext.lineWidth = 4;
             $('#cursor').removeClass('eraser');
-            this.canvasContext.strokeStyle = coords.body[2];
+            this.canvasContext.strokeStyle = color;
         }
 
-        if (coords.body[2]) {
+        if (color) {
             this.canvasContext.beginPath();
             this.canvasContext.moveTo(this.prevPosition.x, this.prevPosition.y);
             this.canvasContext.lineTo(newPosition.x, newPosition.y);
