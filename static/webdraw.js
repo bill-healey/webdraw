@@ -4,36 +4,38 @@
 //**************************************************************************
 // Webdraw class
 //**************************************************************************
-var WebDraw = function() {
+var WebDraw = function () {
     "use strict";
-    this.updateDelta = 50; //Only send data every x milliseconds to limit data spamming
-    this.lastUpdate = Date.now();
     this.isMobileDevice = null;
     this.socket = null;
-    this.prevPosition = null;
-    this.canvasPosition = null;
-    this.canvasContext = null;
-    this.touchColor = false;
-    this.packetTimestamp = null;
-    this.lastRtt = null;
 
-    //Contains info about the deviceorientation control ranges
-    this.ControllerRange = {
+    this.users = {};
+
+    //Contains info drawing canvas
+    this.drawInfo = {
+        canvasContext: null,
+        canvasPosition: null,
+        canvasXScale: null,
+        canvasYScale: null
+    };
+
+    //Contains info about the deviceorientation control ranges and controller status
+    this.controllerInfo = {
+        updateDelta: 50, //Only send data every x milliseconds to limit data spamming
+        lastUpdate: 0,
+        touchColor: false,
+
         //Apparently iOS already zeros these out based on the initial position of device
         //included here in-case other devices don't
         alphaCenter: 0,
         betaCenter: 0,
 
-        //Allowed range of the angular sector
+        //Allowed range of the angular sectors
         alphaSector: 80,
-        betaSector: 80,
-
-        //Scaling factor to map the above sector size to the canvas
-        alphaScale: null,
-        betaScale: null
+        betaSector: 80
     };
 
-    this.init = function() {
+    this.init = function () {
         this.isMobileDevice = this.checkForMobileDevice();
         if (this.isMobileDevice) {
             $('#controller').show();
@@ -53,30 +55,28 @@ var WebDraw = function() {
         this.initWebSocket();
     };
 
-    this.initDraw = function() {
+    this.initDraw = function () {
         var canvas = $('#canvas')[0];
         canvas.width = document.body.clientWidth;
         canvas.height = document.body.clientHeight;
-        this.ControllerRange.betaScale = canvas.height / this.ControllerRange.betaSector;
-        this.ControllerRange.alphaScale = canvas.width / this.ControllerRange.alphaSector;
-        this.canvasPosition = $(canvas).offset();
-        this.canvasContext = canvas.getContext("2d");
-        this.canvasContext.lineCap = 'round';
+        this.drawInfo.canvasXScale = canvas.width / 100;
+        this.drawInfo.canvasYScale = canvas.height / 100;
+        this.drawInfo.canvasPosition = $(canvas).offset();
+        this.drawInfo.canvasContext = canvas.getContext("2d");
+        this.drawInfo.canvasContext.lineCap = 'round';
     };
 
-    this.initWebSocket = function(a) {
+    this.initWebSocket = function () {
         var url = "ws://" + location.host + "/ws";
         this.socket = new WebSocket(url);
         var wsClass = this;
 
-        if (this.isMobileDevice) {
-            this.socket.onmessage = function(e) {wsClass.calcLag(e); };
-        } else {
-            this.socket.onmessage = function(e) {wsClass.draw(e); };
+        if (!this.isMobileDevice) {
+            this.socket.onmessage = function (e) {wsClass.draw(e); };
         }
     };
 
-    this.initColorTable = function(a) {
+    this.initColorTable = function () {
         var colorsPerRow, colors, tr, i;
         tr = "";
         colorsPerRow = 3;
@@ -93,14 +93,59 @@ var WebDraw = function() {
         $(tr).prependTo('#colors');
     };
 
-    this.onDeviceOrientation = function(event) {
-        var now, isDeviceInverted;
+    this.onDeviceOrientation = function (event) {
+        var now, isDeviceInverted, t, alphaRotationFactor, a, b, x, y;
+        t = event.data.originalThis;
         now = Date.now();
-        if (now - event.data.originalThis.lastUpdate <= event.data.originalThis.updateDelta ||
-                !event.originalEvent.alpha ||
-                !event.originalEvent.beta) {
+        a = event.originalEvent.alpha;
+        b = event.originalEvent.beta;
+
+        if (now - t.controllerInfo.lastUpdate <= t.controllerInfo.updateDelta || !a || !b) {
             return;
         }
+
+        t.controllerInfo.lastUpdate = now;
+
+        isDeviceInverted = (Math.abs(event.originalEvent.gamma) > 120);
+
+        //The alpha range is 0-360 so rotate the center to 180 so that we avoid the modulo seam at 360
+        // this way the number space will only wrap around behind the user to prevent jumps
+        alphaRotationFactor = (180 + t.controllerInfo.alphaCenter) % 360;
+        a = (a + alphaRotationFactor) % 360;
+
+        x = (180 + t.controllerInfo.alphaSector / 2 - a) * (100 / t.controllerInfo.alphaSector);
+        y = (t.controllerInfo.betaCenter + t.controllerInfo.betaSector / 2 - b) * (100 / t.controllerInfo.betaSector);
+
+        var data = [x.toFixed(3),
+                    y.toFixed(3),
+                    t.controllerInfo.touchColor,
+                    isDeviceInverted];
+
+
+        t.socket.send(JSON.stringify(data));
+    };
+
+    this.onTouchChange = function (event) {
+        if (event.originalEvent.touches.length > 0) {
+            event.data.originalThis.controllerInfo.touchColor = $(event.originalEvent.target).css('background-color');
+        } else {
+            event.data.originalThis.controllerInfo.touchColor = false;
+        }
+        event.preventDefault();
+        event.originalEvent.preventDefault();
+        return false;
+    };
+
+    this.onMouseMove = function(event) {
+        var now, isDeviceInverted, x, y;
+        now = Date.now();
+
+        if (now - event.data.originalThis.lastUpdate <= event.data.originalThis.updateDelta ||
+            !event.pageX ||
+            !event.pageY) {
+            return;
+        }
+
         event.data.originalThis.lastUpdate = now;
 
         if (!event.data.originalThis.packetTimestamp) {
@@ -109,95 +154,72 @@ var WebDraw = function() {
 
         isDeviceInverted = (Math.abs(event.originalEvent.gamma) > 120);
 
-        var data = [event.originalEvent.alpha.toFixed(3),
-                    event.originalEvent.beta.toFixed(3),
-                    event.data.originalThis.touchColor,
-                    isDeviceInverted,
-                    now,
-                    event.data.originalThis.lastRtt,
-                    'Bill'];
+        x = event.pageX * (100 / $(window).width());
+        y = event.pageY * (100 / $(window).height());
+
+        var data = [x.toFixed(3),
+            y.toFixed(3),
+            event.data.originalThis.touchColor,
+            isDeviceInverted];
 
         event.data.originalThis.socket.send(JSON.stringify(data));
     };
 
-    this.onTouchChange = function(event) {
-        if (event.originalEvent.touches.length > 0) {
-            event.data.originalThis.touchColor = $(event.originalEvent.target).css('background-color');
-        } else {
-            event.data.originalThis.touchColor = false;
-        }
-        event.preventDefault();
-        event.originalEvent.preventDefault();
-        return false;
-    };
-
-    this.onMouseMove = function(event) {
-        //var data = [event.pageX.toFixed(3), event.pageY.toFixed(3)];
-    };
-
-    this.calcLag = function(event) {
-        var coords;
-        coords = JSON.parse(event.data);
-        //TODO: change for multiuser
-        if (this.packetTimestamp && coords.d[4] >= this.packetTimestamp) {
-            // Packet has just completed an RTT
-            this.lastRtt = Date.now() - this.packetTimestamp;
-            this.packetTimestamp = null;
-        }
-    };
-
     this.draw = function(event) {
-        var data, alpha, beta, color, isEraser, clientTimestamp, clientRtt, clientName,
-            alphaRotationFactor, newPosition;
+        var data, x, y, c, color, isEraser, clientName, scaledPos;
 
         data = JSON.parse(event.data);
 
-        alpha = data.d[0];
-        beta = data.d[1];
+        x = data.d[0];
+        y = data.d[1];
         color = data.d[2];
         isEraser = data.d[3];
-        clientTimestamp = data.d[4];
-        clientRtt = data.d[5];
-        clientName = data.d[6];
+        clientName = data.u;
 
-        //The alpha range is 0-360 so rotate the center to 180 so that we avoid the modulo seam at 360
-        // this way the number space will only wrap around behind the user to prevent jumps
-        alphaRotationFactor = (180 + this.ControllerRange.alphaCenter) % 360;
-        alpha = (alpha + alphaRotationFactor) % 360;
+        if (!this.users[clientName]) {
+            //Generate a random color
+            c = Math.round(0xFFFFFF * Math.random()).toString(16);
 
-        newPosition = {
-            x: (((180 + this.ControllerRange.alphaSector / 2 - alpha + 360) % 360) - 180) * this.ControllerRange.alphaScale,
-            y: (this.ControllerRange.betaCenter + this.ControllerRange.betaSector / 2 - beta) * this.ControllerRange.betaScale
-        };
-
-        $('#cursor').css({left: this.canvasPosition.left + newPosition.x,
-                          top: this.canvasPosition.top + newPosition.y});
-
-        $('#cursortext').text(clientName + ": " + String(clientRtt));
-
-        if (!this.prevPosition) {
-            this.prevPosition = newPosition;
-            return;
+            this.users[clientName] = {
+                id: Object.keys(this.users).length,
+                pos: {x: x, y: y},
+                lastSeen: Date.now(),
+                nameColor: "#" + "000000".substring(0, 6 - c.length) + c
+            };
         }
 
+        scaledPos = {
+            x: x * this.drawInfo.canvasXScale,
+            y: y * this.drawInfo.canvasYScale
+        };
+
+        $('#cursor').css({left: this.drawInfo.canvasPosition.left + scaledPos.x,
+                          top: this.drawInfo.canvasPosition.top + scaledPos.y});
+
+        $('#cursortext').text(clientName + String(this.users[clientName].id));
+        $('#cursortext').css({color: this.users[clientName].nameColor});
+
         if (isEraser) {
-            this.canvasContext.lineWidth = 100;
+            this.drawInfo.canvasContext.lineWidth = 100;
             $('#cursor').addClass('eraser');
-            this.canvasContext.strokeStyle = "#000000";
+            this.drawInfo.canvasContext.strokeStyle = "#000000";
         } else {
-            this.canvasContext.lineWidth = 4;
+            this.drawInfo.canvasContext.lineWidth = 4;
             $('#cursor').removeClass('eraser');
-            this.canvasContext.strokeStyle = color;
+            this.drawInfo.canvasContext.strokeStyle = color;
         }
 
         if (color) {
-            this.canvasContext.beginPath();
-            this.canvasContext.moveTo(this.prevPosition.x, this.prevPosition.y);
-            this.canvasContext.lineTo(newPosition.x, newPosition.y);
-            this.canvasContext.stroke();
+            this.drawInfo.canvasContext.beginPath();
+            this.drawInfo.canvasContext.moveTo(this.users[clientName].pos.x * this.drawInfo.canvasXScale,
+                                               this.users[clientName].pos.y * this.drawInfo.canvasYScale);
+            this.drawInfo.canvasContext.lineTo(scaledPos.x, scaledPos.y);
+            this.drawInfo.canvasContext.stroke();
         }
 
-        this.prevPosition = newPosition;
+        this.users[clientName].lastSeen = Date.now();
+        this.users[clientName].pos.x = x;
+        this.users[clientName].pos.y = y;
     };
 
     this.showDebugMessage = function (message) {
