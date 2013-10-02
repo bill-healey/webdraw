@@ -51,6 +51,8 @@ var WebDraw = function () {
         $(window).on("touchend",  null, {originalThis: this}, this.onTouchChange);
         $(window).on("deviceorientation", null, {originalThis: this}, this.onDeviceOrientation);
         $(window).on("mousemove", null, {originalThis: this}, this.onMouseMove);
+        $(window).on("mouseup", null, {originalThis: this}, this.onMouseUp);
+        $(window).on("mousedown", null, {originalThis: this}, this.onMouseDown);
 
         this.initWebSocket();
     };
@@ -136,13 +138,22 @@ var WebDraw = function () {
         return false;
     };
 
+    this.onMouseDown = function (event) {
+        event.data.originalThis.controllerInfo.touchColor = '#FFFFFF';
+        event.preventDefault();
+    };
+
+    this.onMouseUp = function (event) {
+        event.data.originalThis.controllerInfo.touchColor = false;
+    };
+
     this.onMouseMove = function(event) {
         var now, isDeviceInverted, x, y;
         now = Date.now();
 
         if (now - event.data.originalThis.lastUpdate <= event.data.originalThis.updateDelta ||
-            !event.pageX ||
-            !event.pageY) {
+                !event.pageX ||
+                !event.pageY) {
             return;
         }
 
@@ -159,7 +170,7 @@ var WebDraw = function () {
 
         var data = [x.toFixed(3),
             y.toFixed(3),
-            event.data.originalThis.touchColor,
+            event.data.originalThis.controllerInfo.touchColor,
             isDeviceInverted];
 
         event.data.originalThis.socket.send(JSON.stringify(data));
