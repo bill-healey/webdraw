@@ -51,6 +51,11 @@ body {
     color: lightgreen;
 }
 
+.cursortext.lag {
+    padding-top: 1px;
+    font-size: 8pt;
+}
+
 /* *************************
    Controller specific
    *************************/

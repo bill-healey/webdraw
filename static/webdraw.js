@@ -36,6 +36,7 @@ var WebDraw = function () {
     };
 
     this.init = function () {
+        var self = this;
         this.isMobileDevice = this.checkForMobileDevice();
         if (this.isMobileDevice) {
             $('#controller').show();
@@ -45,6 +46,7 @@ var WebDraw = function () {
         } else {
             $('#display').show();
             this.initDraw();
+            setInterval(function () {self.calcLag(); }, 100);
         }
 
         $(window).on("touchstart", null, {originalThis: this}, this.onTouchChange);
@@ -147,7 +149,7 @@ var WebDraw = function () {
         event.data.originalThis.controllerInfo.touchColor = false;
     };
 
-    this.onMouseMove = function(event) {
+    this.onMouseMove = function (event) {
         var now, isDeviceInverted, x, y;
         now = Date.now();
 
@@ -176,6 +178,28 @@ var WebDraw = function () {
         event.data.originalThis.socket.send(JSON.stringify(data));
     };
 
+    this.calcLag = function () {
+        var now, user;
+        now = Date.now();
+
+        for (user in this.users) {
+            if (this.users.hasOwnProperty(user)) {
+                this.users[user].cursorLagElement.text('latency: ' + String(now - this.users[user].lastSeen));
+                if (now - this.users[user].lastSeen > 10000) {
+                    this.users[user].cursorElement.remove();
+                    delete this.users[user];
+                } else if (now - this.users[user].lastSeen > 1000) {
+                    this.users[user].cursorLagElement.css({color: 'red'});
+                } else if (now - this.users[user].lastSeen > 300) {
+                    this.users[user].cursorLagElement.css({color: 'yellow'});
+                } else {
+                    this.users[user].cursorLagElement.css({color: 'lightgreen'});
+                }
+            }
+        }
+
+    };
+
     this.draw = function (event) {
         var data, x, y, randColor, cursorElement, color, isEraser, clientName, scaledPos;
 
@@ -197,7 +221,8 @@ var WebDraw = function () {
                 lastSeen: Date.now(),
                 nameColor: "#" + "000000".substring(0, 6 - randColor.length) + randColor,
                 cursorElement: cursorElement,
-                cursorTextElement: $("<span class='cursortext'>").appendTo(cursorElement)
+                cursorTextElement: $("<div class='cursortext'>").appendTo(cursorElement),
+                cursorLagElement: $("<div class='cursortext lag'>").appendTo(cursorElement)
             };
 
         }
@@ -210,7 +235,7 @@ var WebDraw = function () {
         this.users[clientName].cursorElement.css({left: this.drawInfo.canvasPosition.left + scaledPos.x,
                           top: this.drawInfo.canvasPosition.top + scaledPos.y});
 
-        this.users[clientName].cursorTextElement.text(clientName + ' ' + this.users[clientName].id);
+        this.users[clientName].cursorTextElement.text(clientName);
         this.users[clientName].cursorTextElement.css({color: this.users[clientName].nameColor});
 
         if (isEraser) {
