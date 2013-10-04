@@ -176,8 +176,8 @@ var WebDraw = function () {
         event.data.originalThis.socket.send(JSON.stringify(data));
     };
 
-    this.draw = function(event) {
-        var data, x, y, c, color, isEraser, clientName, scaledPos;
+    this.draw = function (event) {
+        var data, x, y, randColor, cursorElement, color, isEraser, clientName, scaledPos;
 
         data = JSON.parse(event.data);
 
@@ -188,15 +188,18 @@ var WebDraw = function () {
         clientName = data.u;
 
         if (!this.users[clientName]) {
-            //Generate a random color
-            c = Math.round(0xFFFFFF * Math.random()).toString(16);
+            randColor = Math.round(0xFFFFFF * Math.random()).toString(16);
+            cursorElement = $("<div class='cursor'>").appendTo("#display");
 
             this.users[clientName] = {
                 id: Object.keys(this.users).length,
                 pos: {x: x, y: y},
                 lastSeen: Date.now(),
-                nameColor: "#" + "000000".substring(0, 6 - c.length) + c
+                nameColor: "#" + "000000".substring(0, 6 - randColor.length) + randColor,
+                cursorElement: cursorElement,
+                cursorTextElement: $("<span class='cursortext'>").appendTo(cursorElement)
             };
+
         }
 
         scaledPos = {
@@ -204,19 +207,19 @@ var WebDraw = function () {
             y: y * this.drawInfo.canvasYScale
         };
 
-        $('#cursor').css({left: this.drawInfo.canvasPosition.left + scaledPos.x,
+        this.users[clientName].cursorElement.css({left: this.drawInfo.canvasPosition.left + scaledPos.x,
                           top: this.drawInfo.canvasPosition.top + scaledPos.y});
 
-        $('#cursortext').text(clientName + String(this.users[clientName].id));
-        $('#cursortext').css({color: this.users[clientName].nameColor});
+        this.users[clientName].cursorTextElement.text(clientName + ' ' + this.users[clientName].id);
+        this.users[clientName].cursorTextElement.css({color: this.users[clientName].nameColor});
 
         if (isEraser) {
             this.drawInfo.canvasContext.lineWidth = 100;
-            $('#cursor').addClass('eraser');
+            this.users[clientName].cursorElement.addClass('eraser');
             this.drawInfo.canvasContext.strokeStyle = "#000000";
         } else {
             this.drawInfo.canvasContext.lineWidth = 4;
-            $('#cursor').removeClass('eraser');
+            this.users[clientName].cursorElement.removeClass('eraser');
             this.drawInfo.canvasContext.strokeStyle = color;
         }
 

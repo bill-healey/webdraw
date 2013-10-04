@@ -11,7 +11,6 @@ import tornado.options
 import tornado.web
 import tornado.websocket
 import os.path
-import uuid
 
 from tornado.options import define, options
 from tornado import gen
@@ -24,15 +23,18 @@ class Application(tornado.web.Application):
         handlers = [
             (r"/", MainHandler),
             (r"/ws", DrawSocketHandler),
-            (r"/auth/login", AuthHandler),
+            (r"/auth/googlelogin", GoogleAuthHandler),
+            (r"/auth/fblogin", FacebookAuthHandler),
             (r"/auth/logout", LogoutHandler),
         ]
         settings = dict(
             cookie_secret="CBpdzJGPHu62rZvuvYnAA6hC",
+            facebook_api_key="559329704116930",
+            facebook_secret="xxxxxxxxxxxxxxxxxxxxx",
             template_path=os.path.join(os.path.dirname(__file__), "templates"),
             static_path=os.path.join(os.path.dirname(__file__), "static"),
             xsrf_cookies=True,
-            login_url="/auth/login",
+            login_url="/auth/fblogin",
         )
         tornado.web.Application.__init__(self, handlers, **settings)
 
@@ -51,7 +53,28 @@ class MainHandler(BaseHandler):
         self.render("index.html", messages=DrawSocketHandler.cache)
 
 
-class AuthHandler(BaseHandler, tornado.auth.GoogleMixin):
+class FacebookAuthHandler(BaseHandler, tornado.auth.FacebookGraphMixin):
+    @tornado.web.asynchronous
+    @gen.coroutine
+    def get(self):
+        if self.get_argument("code", False):
+            user = yield self.get_authenticated_user(
+                redirect_uri="{}://{}/auth/fblogin".format(self.request.protocol, self.request.host),
+                client_id=self.settings["facebook_api_key"],
+                client_secret=self.settings["facebook_secret"],
+                code=self.get_argument("code"))
+            self.set_secure_cookie('webdraw_user',
+                                   tornado.escape.json_encode(user))
+            self.redirect('/')
+        else:
+            redirect_uri="{}://{}/auth/fblogin".format(self.request.protocol, self.request.host)
+            yield self.authorize_redirect(
+                redirect_uri="{}://{}/auth/fblogin".format(self.request.protocol, self.request.host),
+                client_id=self.settings["facebook_api_key"],
+                extra_params={})
+
+
+class GoogleAuthHandler(BaseHandler, tornado.auth.GoogleMixin):
     @tornado.web.asynchronous
     @gen.coroutine
     def get(self):
